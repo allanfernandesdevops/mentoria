@@ -11,6 +11,7 @@ terraform {
   }
 }
 
+
 #Save state in S3 bucket
 terraform{
     backend "s3"{
@@ -33,8 +34,14 @@ resource "aws_instance" "web-server" {
   ami                         = "ami-053b0d53c279acc90"
   instance_type               = "t2.micro"
   #security_groups             = ["${aws_security_group.web-server-sg.name}"]
-  #key_name                    = "web-server-key"
+  key_name                    = "web-server-key"
   tags                        = {
     Name                      = "web-server"
   }
 }
+
+resource "aws_key_pair" "web-server-key" {
+  key_name = "web-server-key"
+  public_key = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQDB2++8yo3Nub3Rsxak8s1tcxelmCTS3IpFMw06DOKgcQqXbzuNYPQh51m0KbfzYlPl+upAndaJ/0wezd32sF55XlAkyhcsMzY2hX+cqoCKjTrh00MTgxLJIE57eGqgbeEwxeiobXLYtxaBD4EQ3VeHthdsFAMX+gXEmcG6+2ZpJA6e2U+/6+cQc+sSghBW8Lo9FounqEYsIJpgNuB2tM6MFBtKKNuiFzuitrqDRg6SDBUWupjxd3klNVnlfDOKgnVhdP5ygYNmgQJVgqHFlCwG4Mw9ZEb1281xI1DG0n1udKnPZF6IuspKUMkSTXR/SXf/C/fnnv+2cQm7F8HhfPUKqxYwPZ73bv45J9N0xFezcDbMjWftD+PsobY//0x8gx5CNwd9jd58fl0U5i1tEfOJ1IH5OO97QRbn8J1mpIYtapSwLAvZn7mvio8j+Gad69zCduoh32sGnHGu+op/f+03YA38gNWyTc9oDIkwrDe/s21gJbnai2FQ24pb0qqoRvM= allan@ubuntu"
+}
+
