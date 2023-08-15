@@ -33,7 +33,7 @@ resource "aws_vpc" "main" {
 resource "aws_instance" "web-server" {
   ami                         = "ami-053b0d53c279acc90"
   instance_type               = "t2.micro"
-  #security_groups             = ["${aws_security_group.web-server-sg.name}"]
+  security_groups             = ["${aws_security_group.web-server-sg.name}"]
   key_name                    = "web-server-key"
   tags                        = {
     Name                      = "web-server"
