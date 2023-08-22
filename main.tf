@@ -6,7 +6,7 @@ terraform {
   required_providers {
     aws = {
       source  = "hashicorp/aws"
-      version = "~> 3.0"
+      version = "5.13.1"
     }
   }
 }
@@ -21,6 +21,8 @@ terraform{
     }
 }
 
+###### REDE #######
+
 resource "aws_vpc" "main" {
   cidr_block       = "10.0.0.0/16"
   instance_tenancy = "default"
@@ -30,11 +32,66 @@ resource "aws_vpc" "main" {
   }
 }
 
+resource "aws_subnet" "public" {
+  vpc_id     = aws_vpc.main.id
+  cidr_block = "10.0.1.0/24"
+  map_public_ip_on_launch = false
+  
+  tags = {
+    Name = "public_subnet"
+  }
+}
+
+resource "aws_subnet" "private" {
+  vpc_id     = aws_vpc.main.id
+  cidr_block = "10.0.20.0/24"
+  map_public_ip_on_launch = false
+
+  tags = {
+    Name = "private_subnet"
+  }
+}
+
+###### ROLE #####
+
+resource "aws_iam_role" "ec2_role" {
+  name               = "SSMCore-role"
+  assume_role_policy = <<EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Service": "ec2.amazonaws.com"
+      },
+      "Action": "sts:AssumeRole"
+    }
+  ]
+}
+EOF
+}
+
+resource "aws_iam_role_policy_attachment" "ec2_ssm_enable" {
+  role       = aws_iam_role.ec2_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+}
+
+resource "aws_iam_instance_profile" "ec2_iam_profile" {
+  name = "SSMCore-profile"
+  role = aws_iam_role.ec2_role.name
+}
+
+###### INSTANCIAS ########
+
 resource "aws_instance" "web-server" {
   ami                         = "ami-053b0d53c279acc90"
   instance_type               = "t2.micro"
-  security_groups             = ["${aws_security_group.web-server-sg.name}"]
+  security_groups             = [aws_security_group.web-server-sg.id]
   key_name                    = "web-server-key"
+  subnet_id                   = aws_subnet.public.id
+  iam_instance_profile        = aws_iam_instance_profile.ec2_iam_profile.name
+  depends_on                  = [aws_subnet.public]
   tags                        = {
     Name                      = "web-server"
   }
@@ -46,8 +103,9 @@ resource "aws_key_pair" "web-server-key" {
 }
 
 resource "aws_security_group" "web-server-sg" {
-  description = "Allow all outbound traffic and inbound 22/80"
-  name = "web-server-sg"
+  description           = "Allow all outbound traffic and inbound 22/80"
+  name                  = "web-server-sg"
+  vpc_id                = aws_vpc.main.id
   ingress {
     from_port   = 22
     to_port     = 22
@@ -84,6 +142,31 @@ resource "aws_security_group" "web-server-sg" {
   }
 
   tags = {
-    Name        = "sg_jenkins"
+    Name        = "web_server"
   }
+}
+
+######### RDS ############
+
+resource "aws_db_instance" "default" {
+  allocated_storage    = 20
+  storage_type         = "gp2"
+  engine               = "mysql"
+  engine_version       = "5.7"
+  instance_class       = "db.t2.micro"
+  db_name              = "mydb"
+  username             = "foo"
+  password             = "foobarbaz"
+  parameter_group_name = "default.mysql5.7"
+  skip_final_snapshot  = true
+}
+
+#### OUTPUTS #####
+
+output "ip_instance" {
+  value = aws_instance.web-server.public_ip
+}
+
+output "endpoint" {
+  value = aws_db_instance.default.endpoint
 }
