@@ -32,25 +32,85 @@ resource "aws_vpc" "main" {
   }
 }
 
+##### REDE PUBLICA #######
+
 resource "aws_subnet" "public" {
   vpc_id     = aws_vpc.main.id
   cidr_block = "10.0.1.0/24"
-  map_public_ip_on_launch = false
+  map_public_ip_on_launch = true
   
   tags = {
-    Name = "public_subnet"
+    Name = "public_subnet_a"
   }
 }
 
-resource "aws_subnet" "private" {
+resource "aws_internet_gateway" "main" {
+  vpc_id = aws_vpc.main.id
+}
+
+resource "aws_route_table" "public" {
+  vpc_id = aws_vpc.main.id
+}
+
+resource "aws_route" "public_internet_route" {
+  route_table_id         = aws_route_table.public.id
+  destination_cidr_block = "0.0.0.0/0"
+  gateway_id             = aws_internet_gateway.main.id
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+resource "aws_route_table_association" "public" {
+  subnet_id      = aws_subnet.public.id
+  route_table_id = aws_route_table.public.id
+
+  lifecycle {
+    # ignore_changes        = ["subnet_id", "route_table_id"]
+    create_before_destroy = true
+  }
+}
+##### NAT #####
+resource "aws_eip" "nat_eip" {
+  domain   = true
+}
+
+resource "aws_nat_gateway" "nat_gw" {
+  allocation_id = aws_eip.nat_eip.id
+  subnet_id     = aws_subnet.public.index.id
+
+  tags = merge(
+    var.tags,
+    {
+      "Name"    = "${var.name}-NATGW-${count.index}"
+      "EnvName" = var.name
+    },
+  )
+}
+
+resource "aws_subnet" "private_a" {
   vpc_id     = aws_vpc.main.id
   cidr_block = "10.0.20.0/24"
   map_public_ip_on_launch = false
 
   tags = {
-    Name = "private_subnet"
+    Name = "private_subnet_a"
   }
 }
+
+resource "aws_subnet" "private_b" {
+  vpc_id     = aws_vpc.main.id
+  cidr_block = "10.0.40.0/24"
+  map_public_ip_on_launch = false
+
+  tags = {
+    Name = "private_subnet_b"
+  }
+}
+
+
+
 
 ###### ROLE #####
 
@@ -77,6 +137,12 @@ resource "aws_iam_role_policy_attachment" "ec2_ssm_enable" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
 }
 
+resource "aws_iam_role_policy_attachment" "ec2_ssm_patch_enable" {
+  role       = aws_iam_role.ec2_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMPatchAssociation"
+}
+
+
 resource "aws_iam_instance_profile" "ec2_iam_profile" {
   name = "SSMCore-profile"
   role = aws_iam_role.ec2_role.name
@@ -85,13 +151,25 @@ resource "aws_iam_instance_profile" "ec2_iam_profile" {
 ###### INSTANCIAS ########
 
 resource "aws_instance" "web-server" {
-  ami                         = "ami-053b0d53c279acc90"
+  ami                         = "ami-08a52ddb321b32a8c"
   instance_type               = "t2.micro"
   security_groups             = [aws_security_group.web-server-sg.id]
   key_name                    = "web-server-key"
   subnet_id                   = aws_subnet.public.id
   iam_instance_profile        = aws_iam_instance_profile.ec2_iam_profile.name
   depends_on                  = [aws_subnet.public]
+  associate_public_ip_address = true
+  user_data                   = <<EOF
+#!/bin/bash
+# Use this for your user data (script from top to bottom)
+# install httpd (Linux 2 version)
+yum update -y
+yum install -y httpd
+systemctl start httpd
+systemctl enable httpd
+echo "<h1>Hello World from $(hostname -f)</h1>" > /var/www/html/index.html
+EOF
+  
   tags                        = {
     Name                      = "web-server"
   }
@@ -148,18 +226,18 @@ resource "aws_security_group" "web-server-sg" {
 
 ######### RDS ############
 
-resource "aws_db_instance" "default" {
-  allocated_storage    = 20
-  storage_type         = "gp2"
-  engine               = "mysql"
-  engine_version       = "5.7"
-  instance_class       = "db.t2.micro"
-  db_name              = "mydb"
-  username             = "foo"
-  password             = "foobarbaz"
-  parameter_group_name = "default.mysql5.7"
-  skip_final_snapshot  = true
-}
+# resource "aws_db_instance" "default" {
+#   allocated_storage    = 20
+#   storage_type         = "gp2"
+#   engine               = "mysql"
+#   engine_version       = "5.7"
+#   instance_class       = "db.t2.micro"
+#   db_name              = "mydb"
+#   username             = "foo"
+#   password             = "foobarbaz"
+#   parameter_group_name = "default.mysql5.7"
+#   skip_final_snapshot  = true
+#}
 
 #### OUTPUTS #####
 
@@ -167,6 +245,6 @@ output "ip_instance" {
   value = aws_instance.web-server.public_ip
 }
 
-output "endpoint" {
-  value = aws_db_instance.default.endpoint
-}
+# output "endpoint" {
+#   value = aws_db_instance.default.endpoint
+# }
